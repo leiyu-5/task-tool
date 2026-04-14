@@ -1,7 +1,16 @@
+import axios from 'axios';
 import { cloudConfig } from '../config/cloud';
 import { Task, Member, ScheduleResult } from '../types';
 import { mockTasks, mockMembers, mockScheduleResults } from '../data/mockData';
-import { getCollection } from './cloudbase';
+
+// 创建axios实例
+const apiClient = axios.create({
+  baseURL: `https://${cloudConfig.envId}.service.tcloudbase.com/api`,
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json'
+  }
+});
 
 // API服务类
 class ApiService {
@@ -12,9 +21,8 @@ class ApiService {
     }
     
     try {
-      const collection = await getCollection('tasks');
-      const result = await collection.get();
-      return result.data as Task[];
+      const response = await apiClient.get('/tasks');
+      return response.data;
     } catch (error) {
       console.error('获取任务失败:', error);
       return mockTasks;
@@ -32,12 +40,8 @@ class ApiService {
     }
     
     try {
-      const collection = await getCollection('tasks');
-      const result = await collection.doc(id).get();
-      if (!result.data || result.data.length === 0) {
-        throw new Error('任务不存在');
-      }
-      return result.data[0] as Task;
+      const response = await apiClient.get(`/tasks/${id}`);
+      return response.data;
     } catch (error) {
       console.error('获取任务失败:', error);
       throw error;
@@ -57,14 +61,13 @@ class ApiService {
     }
     
     try {
-      const collection = await getCollection('tasks');
       const newTask: Task = {
         ...task,
         id: Date.now().toString(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
-      await collection.add(newTask);
+      await apiClient.post('/tasks', newTask);
       return newTask;
     } catch (error) {
       console.error('创建任务失败:', error);
@@ -88,12 +91,11 @@ class ApiService {
     }
     
     try {
-      const collection = await getCollection('tasks');
       const updatedTask = {
         ...task,
         updatedAt: new Date().toISOString()
       };
-      await collection.doc(id).update(updatedTask);
+      await apiClient.put(`/tasks/${id}`, updatedTask);
       return { ...(await this.fetchTask(id)), ...updatedTask };
     } catch (error) {
       console.error('更新任务失败:', error);
@@ -108,8 +110,7 @@ class ApiService {
     }
     
     try {
-      const collection = await getCollection('tasks');
-      await collection.doc(id).remove();
+      await apiClient.delete(`/tasks/${id}`);
     } catch (error) {
       console.error('删除任务失败:', error);
       throw error;
@@ -123,9 +124,8 @@ class ApiService {
     }
     
     try {
-      const collection = await getCollection('members');
-      const result = await collection.get();
-      return result.data as Member[];
+      const response = await apiClient.get('/members');
+      return response.data;
     } catch (error) {
       console.error('获取成员失败:', error);
       return mockMembers;
@@ -143,12 +143,8 @@ class ApiService {
     }
     
     try {
-      const collection = await getCollection('members');
-      const result = await collection.doc(id).get();
-      if (!result.data || result.data.length === 0) {
-        throw new Error('成员不存在');
-      }
-      return result.data[0] as Member;
+      const response = await apiClient.get(`/members/${id}`);
+      return response.data;
     } catch (error) {
       console.error('获取成员失败:', error);
       throw error;
@@ -167,13 +163,12 @@ class ApiService {
     }
     
     try {
-      const collection = await getCollection('members');
       const newMember: Member = {
         ...member,
         id: Date.now().toString(),
         createdAt: new Date().toISOString()
       };
-      await collection.add(newMember);
+      await apiClient.post('/members', newMember);
       return newMember;
     } catch (error) {
       console.error('创建成员失败:', error);
@@ -196,8 +191,7 @@ class ApiService {
     }
     
     try {
-      const collection = await getCollection('members');
-      await collection.doc(id).update(member);
+      await apiClient.put(`/members/${id}`, member);
       return { ...(await this.fetchMember(id)), ...member };
     } catch (error) {
       console.error('更新成员失败:', error);
@@ -212,8 +206,7 @@ class ApiService {
     }
     
     try {
-      const collection = await getCollection('members');
-      await collection.doc(id).remove();
+      await apiClient.delete(`/members/${id}`);
     } catch (error) {
       console.error('删除成员失败:', error);
       throw error;
@@ -227,10 +220,7 @@ class ApiService {
     }
     
     try {
-      const collection = await getCollection('schedule');
-      for (const item of schedule) {
-        await collection.add(item);
-      }
+      await apiClient.post('/schedule', schedule);
       return schedule;
     } catch (error) {
       console.error('保存排程失败:', error);
@@ -245,9 +235,8 @@ class ApiService {
     }
     
     try {
-      const collection = await getCollection('schedule');
-      const result = await collection.get();
-      return result.data as ScheduleResult[];
+      const response = await apiClient.get('/schedule');
+      return response.data;
     } catch (error) {
       console.error('获取排程失败:', error);
       return mockScheduleResults;
