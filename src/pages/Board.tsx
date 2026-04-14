@@ -9,47 +9,127 @@ import {
   Paperclip,
   X,
   Share2,
-  Trash2
+  Trash2,
+  Edit3,
+  CheckCircle2,
+  Clock,
+  UserPlus
 } from 'lucide-react';
 import { apiService } from '../services/api';
-import { Task } from '../types';
+import { Task, Member } from '../types';
 
 const Board: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterPriority, setFilterPriority] = useState<string>('all');
 
   useEffect(() => {
-    const fetchTasks = async () => {
+    const fetchData = async () => {
       try {
-        const tasksData = await apiService.fetchTasks();
+        const [tasksData, membersData] = await Promise.all([
+          apiService.fetchTasks(),
+          apiService.fetchMembers()
+        ]);
         setTasks(tasksData);
+        setMembers(membersData);
       } catch (error) {
-        console.error('获取任务失败:', error);
+        console.error('获取数据失败:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchTasks();
+    fetchData();
   }, []);
 
-  // 按状态分组任务
-  const todoTasks = tasks.filter(task => task.status === 'todo');
-  const inProgressTasks = tasks.filter(task => task.status === 'in_progress');
-  const completedTasks = tasks.filter(task => task.status === 'completed');
+  const getMemberName = (memberId?: string) => {
+    if (!memberId) return '未分配';
+    const member = members.find(m => m.id === memberId);
+    return member?.name || '未分配';
+  };
 
-  // 打开任务详情抽屉
+  const getMemberAvatar = (memberId?: string) => {
+    if (!memberId) return 'https://via.placeholder.com/100?text=?';
+    const member = members.find(m => m.id === memberId);
+    return member?.avatar || 'https://via.placeholder.com/100?text=?';
+  };
+
+  const filteredTasks = tasks.filter(task => {
+    const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         task.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesPriority = filterPriority === 'all' || task.priority === filterPriority;
+    return matchesSearch && matchesPriority;
+  });
+
+  const todoTasks = filteredTasks.filter(task => task.status === 'todo').sort((a, b) => 
+    new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+  );
+  const inProgressTasks = filteredTasks.filter(task => task.status === 'in_progress').sort((a, b) => 
+    new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+  );
+  const completedTasks = filteredTasks.filter(task => task.status === 'completed').sort((a, b) => 
+    new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+  );
+
   const openDrawer = (task: Task) => {
     setSelectedTask(task);
     setDrawerOpen(true);
   };
 
-  // 关闭任务详情抽屉
   const closeDrawer = () => {
     setDrawerOpen(false);
     setSelectedTask(null);
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    if (confirm('确定要删除这个任务吗？')) {
+      try {
+        await apiService.deleteTask(taskId);
+        setTasks(tasks.filter(t => t.id !== taskId));
+        closeDrawer();
+      } catch (error) {
+        console.error('删除任务失败:', error);
+      }
+    }
+  };
+
+  const handleUpdateStatus = async (taskId: string, newStatus: 'todo' | 'in_progress' | 'completed') => {
+    try {
+      await apiService.updateTask(taskId, { status: newStatus });
+      setTasks(tasks.map(t => t.id === taskId ? { ...t, status: newStatus, updatedAt: new Date().toISOString() } : t));
+    } catch (error) {
+      console.error('更新任务状态失败:', error);
+    }
+  };
+
+  const handleUpdateAssignee = async (taskId: string, memberId: string) => {
+    try {
+      await apiService.updateTask(taskId, { assignee: memberId });
+      setTasks(tasks.map(t => t.id === taskId ? { ...t, assignee: memberId, updatedAt: new Date().toISOString() } : t));
+    } catch (error) {
+      console.error('更新任务负责人失败:', error);
+    }
+  };
+
+  const handleAddTask = async (newTask: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      const task = await apiService.createTask(newTask);
+      setTasks([...tasks, task]);
+      setShowAddModal(false);
+    } catch (error) {
+      console.error('创建任务失败:', error);
+    }
+  };
+
+  const isOverdue = (dueDate: string) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return new Date(dueDate) < today;
   };
 
   if (loading) {
@@ -58,7 +138,6 @@ const Board: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
-      {/* 头部视图切换与操作 */}
       <header className="flex flex-col gap-6 mb-8 flex-shrink-0">
         <div className="flex justify-between items-center">
           <div>
@@ -75,15 +154,36 @@ const Board: React.FC = () => {
               <img alt="Avatar" className="w-8 h-8 rounded-full border-2 border-white ring-1 ring-slate-100" src="https://via.placeholder.com/100" />
               <div className="w-8 h-8 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[10px] font-bold">+12</div>
             </div>
+            <div className="flex items-center bg-white border border-slate-200 rounded-xl px-4 py-2">
+              <Search className="text-lg text-slate-400 mr-2" />
+              <input 
+                className="outline-none bg-transparent w-48 text-sm" 
+                placeholder="搜索任务..." 
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <select 
+              className="p-2.5 border border-slate-200 rounded-xl outline-none bg-white text-sm"
+              value={filterPriority}
+              onChange={(e) => setFilterPriority(e.target.value)}
+            >
+              <option value="all">全部优先级</option>
+              <option value="urgent">紧急</option>
+              <option value="high">高</option>
+              <option value="medium">中</option>
+              <option value="low">低</option>
+            </select>
             <button className="p-2.5 border border-slate-200 rounded-xl hover:bg-white hover:shadow-sm transition-all">
               <Filter className="text-xl text-slate-600" />
             </button>
-            <button className="p-2.5 border border-slate-200 rounded-xl hover:bg-white hover:shadow-sm transition-all">
-              <Search className="text-xl text-slate-600" />
-            </button>
-            <button className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 shadow-md shadow-indigo-100 transition-all">
+            <button 
+              onClick={() => setShowAddModal(true)}
+              className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 shadow-md shadow-indigo-100 transition-all"
+            >
               <PlusCircle className="text-xl" />
-          新建列表
+              新建任务
             </button>
           </div>
         </div>
@@ -95,9 +195,7 @@ const Board: React.FC = () => {
         </div>
       </header>
 
-      {/* 看板主区域 */}
       <div className="flex-1 flex gap-6 overflow-x-auto pb-4">
-        {/* 待处理 */}
         <div className="kanban-column flex-shrink-0 w-80 p-4 flex flex-col gap-4">
           <div className="flex justify-between items-center mb-2 px-2">
             <div className="flex items-center gap-2">
@@ -125,21 +223,23 @@ const Board: React.FC = () => {
               </div>
               <h5 className="font-bold text-slate-800 text-sm mb-3">{task.title}</h5>
               <div className="flex items-center justify-between mt-4">
-                <div className="flex items-center gap-2">
-                  <ListChecks className="text-slate-300" />
-                  <span className="text-[10px] text-slate-400 font-medium">0/4 子任务</span>
+                <div className={`flex items-center gap-2 ${isOverdue(task.dueDate) ? 'text-rose-500' : 'text-slate-400'}`}>
+                  <Clock className="text-sm" />
+                  <span className="text-[10px] font-medium">{new Date(task.dueDate).toLocaleDateString('zh-CN')}</span>
                 </div>
-                <img className="w-6 h-6 rounded-full border border-white" src="https://via.placeholder.com/100" />
+                <img className="w-6 h-6 rounded-full border border-white" src={getMemberAvatar(task.assignee)} />
               </div>
             </div>
           ))}
           
-          <button className="w-full py-2 border-2 border-dashed border-slate-300 rounded-xl text-slate-400 text-xs font-bold hover:border-indigo-400 hover:text-indigo-500 transition-all">
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="w-full py-2 border-2 border-dashed border-slate-300 rounded-xl text-slate-400 text-xs font-bold hover:border-indigo-400 hover:text-indigo-500 transition-all"
+          >
             + 添加新任务
           </button>
         </div>
 
-        {/* 进行中 */}
         <div className="kanban-column flex-shrink-0 w-80 p-4 flex flex-col gap-4">
           <div className="flex justify-between items-center mb-2 px-2">
             <div className="flex items-center gap-2">
@@ -170,17 +270,16 @@ const Board: React.FC = () => {
                 <div className="bg-indigo-600 h-full w-[65%]"></div>
               </div>
               <div className="flex items-center justify-between mt-4">
-                <div className="flex items-center gap-2 text-indigo-600">
+                <div className={`flex items-center gap-2 ${isOverdue(task.dueDate) ? 'text-rose-500' : 'text-indigo-600'}`}>
                   <Calendar className="text-lg" />
-                  <span className="text-[10px] font-bold">今天到期</span>
+                  <span className="text-[10px] font-bold">{new Date(task.dueDate).toLocaleDateString('zh-CN')}</span>
                 </div>
-                <img className="w-6 h-6 rounded-full border border-white" src="https://via.placeholder.com/100" />
+                <img className="w-6 h-6 rounded-full border border-white" src={getMemberAvatar(task.assignee)} />
               </div>
             </div>
           ))}
         </div>
 
-        {/* 已完成 */}
         <div className="kanban-column flex-shrink-0 w-80 p-4 flex flex-col gap-4">
           <div className="flex justify-between items-center mb-2 px-2">
             <div className="flex items-center gap-2">
@@ -204,19 +303,15 @@ const Board: React.FC = () => {
               <h5 className="font-bold text-slate-600 text-sm mb-3 line-through">{task.title}</h5>
               <div className="flex items-center justify-between mt-4">
                 <div className="flex items-center gap-2 text-emerald-500">
-                  <svg className="text-lg" width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                    <polyline points="22 4 12 14.01 9 11.01"/>
-                  </svg>
-                  <span className="text-[10px] font-bold">已于昨日归档</span>
+                  <CheckCircle2 className="text-lg" />
+                  <span className="text-[10px] font-bold">已于 {new Date(task.dueDate).toLocaleDateString('zh-CN')}</span>
                 </div>
-                <img className="w-6 h-6 rounded-full border border-white opacity-50" src="https://via.placeholder.com/100" />
+                <img className="w-6 h-6 rounded-full border border-white opacity-50" src={getMemberAvatar(task.assignee)} />
               </div>
             </div>
           ))}
         </div>
 
-        {/* 空列表 */}
         <div className="kanban-column flex-shrink-0 w-80 p-4 border-2 border-dashed border-slate-300 bg-transparent opacity-50 flex items-center justify-center">
           <button className="flex flex-col items-center gap-2">
             <svg className="text-4xl text-slate-400" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -229,7 +324,6 @@ const Board: React.FC = () => {
         </div>
       </div>
 
-      {/* 任务详情抽屉 */}
       {drawerOpen && selectedTask && (
         <div className="fixed inset-0 z-[100] bg-slate-900/40 flex justify-end" onClick={closeDrawer}>
           <div className="w-[500px] h-full bg-white shadow-2xl flex flex-col pointer-events-auto" onClick={e => e.stopPropagation()}>
@@ -242,7 +336,7 @@ const Board: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 <button className="p-2 text-slate-400 hover:text-indigo-600"><Share2 className="text-xl" /></button>
-                <button className="p-2 text-slate-400 hover:text-red-500"><Trash2 className="text-xl" /></button>
+                <button className="p-2 text-slate-400 hover:text-red-500" onClick={() => handleDeleteTask(selectedTask.id)}><Trash2 className="text-xl" /></button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-8">
@@ -261,14 +355,21 @@ const Board: React.FC = () => {
                 <div>
                   <p className="text-[10px] text-slate-400 font-bold uppercase mb-2">负责人</p>
                   <div className="flex items-center gap-3">
-                    <img className="w-8 h-8 rounded-full" src="https://via.placeholder.com/100" />
-                    <span className="text-sm font-bold text-slate-700">陈明远 (你)</span>
+                    <img className="w-8 h-8 rounded-full" src={getMemberAvatar(selectedTask.assignee)} />
+                    <span className="text-sm font-bold text-slate-700">{getMemberName(selectedTask.assignee)}</span>
+                    <UserPlus className="text-slate-400 hover:text-indigo-500 cursor-pointer" onClick={() => {
+                      const availableMembers = members.filter(m => m.id !== selectedTask.assignee);
+                      const nextMember = availableMembers[0];
+                      if (nextMember) {
+                        handleUpdateAssignee(selectedTask.id, nextMember.id);
+                      }
+                    }} />
                   </div>
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-400 font-bold uppercase mb-2">截止日期</p>
-                  <div className="flex items-center gap-2">
-                    <Calendar className="text-indigo-500 text-xl" />
+                  <div className={`flex items-center gap-2 ${isOverdue(selectedTask.dueDate) ? 'text-rose-500' : 'text-indigo-500'}`}>
+                    <Calendar className="text-xl" />
                     <span className="text-sm font-bold text-slate-700">{new Date(selectedTask.dueDate).toLocaleDateString('zh-CN')}</span>
                   </div>
                 </div>
@@ -351,8 +452,33 @@ const Board: React.FC = () => {
                   </div>
                 </div>
               </div>
+              <div className="mb-8">
+                <h4 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  <Edit3 className="text-slate-400" />
+                  状态变更
+                </h4>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => handleUpdateStatus(selectedTask.id, 'todo')}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${selectedTask.status === 'todo' ? 'bg-slate-100 text-slate-900' : 'bg-white border border-slate-200 text-slate-500 hover:border-indigo-400'}`}
+                  >
+                    待处理
+                  </button>
+                  <button 
+                    onClick={() => handleUpdateStatus(selectedTask.id, 'in_progress')}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${selectedTask.status === 'in_progress' ? 'bg-indigo-100 text-indigo-900' : 'bg-white border border-slate-200 text-slate-500 hover:border-indigo-400'}`}
+                  >
+                    进行中
+                  </button>
+                  <button 
+                    onClick={() => handleUpdateStatus(selectedTask.id, 'completed')}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${selectedTask.status === 'completed' ? 'bg-emerald-100 text-emerald-900' : 'bg-white border border-slate-200 text-slate-500 hover:border-indigo-400'}`}
+                  >
+                    已完成
+                  </button>
+                </div>
+              </div>
             </div>
-            {/* 底部评论区 */}
             <div className="p-6 bg-slate-50 border-t border-slate-200">
               <div className="flex gap-4 mb-4">
                 <img className="w-8 h-8 rounded-full" src="https://via.placeholder.com/100" />
@@ -379,6 +505,123 @@ const Board: React.FC = () => {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showAddModal && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/40 flex items-center justify-center" onClick={() => setShowAddModal(false)}>
+          <div className="w-[500px] bg-white rounded-3xl p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-8">
+              <h2 className="text-xl font-bold text-slate-900">新建任务</h2>
+              <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-slate-100 rounded-lg">
+                <X className="text-slate-400" />
+              </button>
+            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.target as HTMLFormElement);
+              const newTask: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> = {
+                title: formData.get('title') as string,
+                description: formData.get('description') as string,
+                priority: formData.get('priority') as 'urgent' | 'high' | 'medium' | 'low',
+                status: 'todo',
+                dueDate: new Date(formData.get('dueDate') as string).toISOString(),
+                estimatedHours: parseFloat(formData.get('estimatedHours') as string) || 4,
+                skills: (formData.get('skills') as string).split(',').map(s => s.trim()).filter(Boolean),
+                tags: (formData.get('tags') as string).split(',').map(s => s.trim()).filter(Boolean)
+              };
+              handleAddTask(newTask);
+            }}>
+              <div className="space-y-6">
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">任务标题</label>
+                  <input 
+                    type="text" 
+                    name="title" 
+                    className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="输入任务标题"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">任务描述</label>
+                  <textarea 
+                    name="description" 
+                    rows={3}
+                    className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                    placeholder="描述任务详情..."
+                  ></textarea>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">优先级</label>
+                    <select 
+                      name="priority" 
+                      className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="medium">中</option>
+                      <option value="high">高</option>
+                      <option value="urgent">紧急</option>
+                      <option value="low">低</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">预估工时 (小时)</label>
+                    <input 
+                      type="number" 
+                      name="estimatedHours" 
+                      min="1"
+                      max="40"
+                      defaultValue="4"
+                      className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">截止日期</label>
+                  <input 
+                    type="date" 
+                    name="dueDate" 
+                    className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">所需技能 (逗号分隔)</label>
+                  <input 
+                    type="text" 
+                    name="skills" 
+                    className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="例如：Figma, C4D, 视觉设计"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">标签 (逗号分隔)</label>
+                  <input 
+                    type="text" 
+                    name="tags" 
+                    className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="例如：视觉设计, 紧急"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-4 mt-8">
+                <button 
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-all"
+                >
+                  取消
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all"
+                >
+                  创建任务
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

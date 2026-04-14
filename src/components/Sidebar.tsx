@@ -4,11 +4,11 @@ import {
   Clapperboard, 
   Users, 
   BarChart3, 
-  Settings 
+  Settings,
+  CalendarCheck
 } from 'lucide-react';
 
-// 定义路由类型
-type Route = 'dashboard' | 'board' | 'team' | 'reports';
+type Route = 'dashboard' | 'board' | 'team' | 'reports' | 'schedule';
 
 interface SidebarProps {
   activeRoute: Route;
@@ -45,6 +45,13 @@ const Sidebar: React.FC<SidebarProps> = ({ activeRoute, onRouteChange }) => {
         >
           <Users className="text-xl" />
           <span className="font-medium">团队技能</span>
+        </button>
+        <button 
+          className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${activeRoute === 'schedule' ? 'sidebar-item-active' : 'text-slate-500 hover:bg-slate-50 hover:text-indigo-600'}`}
+          onClick={() => onRouteChange('schedule')}
+        >
+          <CalendarCheck className="text-xl" />
+          <span className="font-medium">智能排程</span>
         </button>
         <button 
           className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${activeRoute === 'reports' ? 'sidebar-item-active' : 'text-slate-500 hover:bg-slate-50 hover:text-indigo-600'}`}

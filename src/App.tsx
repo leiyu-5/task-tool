@@ -4,14 +4,13 @@ import Dashboard from './pages/Dashboard';
 import Board from './pages/Board';
 import Team from './pages/Team';
 import Reports from './pages/Reports';
+import Schedule from './pages/Schedule';
 
-// 定义路由类型
-type Route = 'dashboard' | 'board' | 'team' | 'reports';
+type Route = 'dashboard' | 'board' | 'team' | 'reports' | 'schedule';
 
 function App() {
   const [activeRoute, setActiveRoute] = useState<Route>('dashboard');
 
-  // 根据当前路由渲染对应页面
   const renderPage = () => {
     switch (activeRoute) {
       case 'dashboard':
@@ -22,6 +21,8 @@ function App() {
         return <Team />;
       case 'reports':
         return <Reports />;
+      case 'schedule':
+        return <Schedule />;
       default:
         return <Dashboard />;
     }
